@@ -1,0 +1,29 @@
+# Secretos — nunca subir
+.env
+*.env
+!tools/.env.example
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Bases de datos locales y logs (SQLite del MVP)
+*.db
+*.db-wal
+*.db-shm
+*.log
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# macOS / iOS
+.DS_Store
+build/
+DerivedData/
+
+# Editores
+.vscode/
+.idea/

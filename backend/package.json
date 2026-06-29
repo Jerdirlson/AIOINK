@@ -1,0 +1,14 @@
+{
+  "name": "iaoink-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Backend MVP de IAOINK (finanzas personales). Sin dependencias: Node 24 + node:sqlite.",
+  "engines": {
+    "node": ">=22.5"
+  },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "selftest": "node src/selftest.mjs"
+  }
+}
