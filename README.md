@@ -14,6 +14,7 @@ Proyecto personal, en fase de diseño/documentación — sin código de producto
 6. [Captura multicanal](docs/06-captura-multicanal.md)
 7. [Seguridad y cumplimiento](docs/07-seguridad-cumplimiento.md)
 8. [Roadmap](docs/08-roadmap.md)
+9. [Sistema de diseño (estilo Apple)](docs/09-diseno-sistema.md)
 
 Decisiones de arquitectura: [`docs/decisiones/`](docs/decisiones/).
 
