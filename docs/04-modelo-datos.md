@@ -1,33 +1,69 @@
-# 04 · Modelo de datos (núcleo)
+# 04 · Modelo de datos
 
-Esquema relacional inicial. Los nombres son orientativos; se afinarán al implementar las migraciones.
+Modelo conceptual para el MVP y las fases inmediatas siguientes. Se implementa como schema de Prisma sobre PostgreSQL (`backend/prisma/schema.prisma`).
+
+## Entidades principales
+
+### User
+- `id`, `email`, `passwordHash` (o proveedor OAuth), `name`, `avatarUrl`
+- `currency` (default `COP`), `country` (default `CO`), `locale` (default `es`)
+- `plan` (`free` | `pro`) — fase posterior
+- `createdAt`, `updatedAt`
+
+### Account (cuenta)
+- `id`, `userId`
+- `name` (ej. "Principal", "Colchón")
+- `type` (`cash` | `debit` | `credit` | `savings`)
+- `currency`
+- `initialBalance` — se registra como transacción de la categoría especial "Saldo inicial"
+- `isArchived`
+
+### Category (categoría)
+- `id`, `userId` (null si es categoría del sistema)
+- `name`, `icon` (emoji o asset)
+- `kind` (`expense` | `income` | `system`)
+- `isSystem` (true para "Saldo inicial" y "Transferencia" — no editable/borrable)
+
+### Transaction (transacción)
+- `id`, `userId`, `accountId`, `categoryId`
+- `amount` (entero en centavos o unidad menor, para evitar errores de coma flotante), `currency`
+- `type` (`expense` | `income` | `transfer`)
+- `description`, `note`
+- `occurredAt` (fecha del gasto), `createdAt`
+- `source` (`manual` | `apple_pay_shortcut` | `sms` | `whatsapp` | `scan_ai` | `mic_ai` | `notes_ai` | `belvo`)
+- `externalId` (nullable — id en Belvo u otro origen externo, para deduplicar)
+- `transferGroupId` (nullable — enlaza las dos transacciones de una transferencia entre cuentas propias)
+
+### Budget (presupuesto) — fase 2
+- `id`, `userId`, `categoryId`
+- `amount`, `period` (`monthly`)
+- `startDate`
+
+### SavingGoal (meta de ahorro) — fase 2
+- `id`, `userId`, `accountId` (opcional, cuenta asociada)
+- `name`, `targetAmount`, `currentAmount`, `targetDate`
+
+### Debt (deuda) — fase 2
+- `id`, `userId`
+- `name`, `counterparty` (a quién se debe o quién debe), `direction` (`owed_by_me` | `owed_to_me`)
+- `totalAmount`, `remainingAmount`, `dueDate`
+
+## Relaciones clave
 
 ```
-users            (id, apple_sub, email, created_at)
-institutions     (id, belvo_institution_id, name, country, logo)
-bank_links       (id, user_id, belvo_link_id, institution_id, status, access_mode, created_at)
-accounts         (id, link_id, belvo_account_id, name, type, currency, balance, updated_at)
-transactions     (id, account_id, belvo_tx_id UNIQUE, amount, currency, date,
-                  merchant, description, category_id, type, is_manual, notes, created_at)
-categories       (id, name_es, parent_id, icon, is_system)
-category_rules   (id, user_id, match_type, match_value, category_id)   -- aprendizaje/override
-budgets          (id, user_id, category_id, period, amount)
-goals            (id, user_id, name, target_amount, current_amount, due_date)
-recurring        (id, user_id, merchant, avg_amount, cadence, next_date)
-notifications    (id, user_id, type, payload, read_at, created_at)
+User 1─N Account
+User 1─N Category (+ categorías del sistema compartidas, userId null)
+User 1─N Transaction
+Account 1─N Transaction
+Category 1─N Transaction
+User 1─N Budget ─N:1─ Category
+User 1─N SavingGoal ─N:1─ Account
+User 1─N Debt
 ```
 
-## Relaciones
+## Decisiones de modelado
 
-- `users` 1—N `bank_links` 1—N `accounts` 1—N `transactions`.
-- `transactions` N—1 `categories`.
-- `category_rules` pertenecen al usuario y resuelven la categoría antes/después de Belvo.
-- `budgets`, `goals`, `recurring`, `notifications` pertenecen al usuario.
-
-## Notas de diseño
-
-- **`transactions.belvo_tx_id` es UNIQUE** → garantiza idempotencia en la ingesta vía webhooks.
-- `type` ∈ {`expense`, `income`, `transfer`}; las transferencias internas se excluyen de gasto neto.
-- `is_manual = true` para efectivo/registro manual (sin `belvo_tx_id`).
-- `currency` por defecto `COP` en el MVP.
-- Campos sensibles candidatos a cifrado a nivel de campo: `merchant`, `description`, `notes`.
+- **Montos en enteros** (menor unidad monetaria) para evitar errores de redondeo — coherente con backend en TypeScript.
+- **`source` en Transaction** desde el MVP, aunque solo se usen `manual` y `apple_pay_shortcut` al inicio — evita una migración disruptiva cuando se agreguen los demás canales.
+- **Transferencias** se modelan como dos `Transaction` (una por cuenta) unidas por `transferGroupId`, en vez de un tipo de entidad aparte — simplifica reportes porque todo sigue siendo una transacción.
+- **Deduplicación con Belvo:** cuando se active la integración, cada movimiento importado guarda su `externalId` de Belvo; el backend debe verificar que no exista ya un `externalId` igual antes de insertar (evita duplicar lo que el usuario ya registró manualmente o vía Apple Pay).

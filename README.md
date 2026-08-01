@@ -1,37 +1,34 @@
-# IAOINK — App de Finanzas Personales
+# IAOINK
 
-App de finanzas personales (estilo MonAI) para **iOS** que se conecta al **banco** (vía Belvo) para
-auto-registrar y **autocategorizar** los movimientos, con presupuestos, metas e insights.
+App de finanzas personales para iOS (Colombia) que registra y categoriza gastos con la menor fricción manual posible: captura automática vía Apple Pay y agregación bancaria (Belvo), más captura asistida por IA (voz, foto de recibo, texto libre, WhatsApp).
 
-> **Estado:** fase de diseño. Aún no hay código de aplicación. La documentación vive en [`docs/`](docs/).
-
-## Resumen rápido
-
-| | |
-|---|---|
-| **País** | Colombia |
-| **Plataforma** | iOS (Swift / SwiftUI) |
-| **Backend** | Python / FastAPI + PostgreSQL |
-| **Agregador bancario** | [Belvo](https://belvo.com) (sandbox → producción) |
-| **Auth** | Sign in with Apple |
+Proyecto personal, en fase de diseño/documentación — sin código de producto todavía.
 
 ## Documentación
 
-- [01 · Visión y alcance](docs/01-vision-alcance.md)
-- [02 · Arquitectura y stack](docs/02-arquitectura-stack.md)
-- [03 · Módulos](docs/03-modulos.md)
-- [04 · Modelo de datos](docs/04-modelo-datos.md)
-- [05 · Integración Belvo](docs/05-integracion-belvo.md)
-- [06 · Seguridad y cumplimiento](docs/06-seguridad-cumplimiento.md)
-- [07 · Roadmap](docs/07-roadmap.md)
-- [08 · Captura con Apple Wallet (Atajo)](docs/08-captura-apple-wallet-shortcut.md)
-- [Decisiones de arquitectura (ADRs)](docs/decisiones/)
+1. [Visión y alcance](docs/01-vision-alcance.md)
+2. [Arquitectura y stack](docs/02-arquitectura-stack.md)
+3. [Módulos y funcionalidades](docs/03-modulos-funcionalidades.md)
+4. [Modelo de datos](docs/04-modelo-datos.md)
+5. [Integración con Belvo](docs/05-integracion-belvo.md)
+6. [Captura multicanal](docs/06-captura-multicanal.md)
+7. [Seguridad y cumplimiento](docs/07-seguridad-cumplimiento.md)
+8. [Roadmap](docs/08-roadmap.md)
 
-## Fuentes de auto-registro
+Decisiones de arquitectura: [`docs/decisiones/`](docs/decisiones/).
 
-1. **Apple Wallet vía Atajo "Transacción"** (iOS 17+) — vía **principal del MVP**: gratis, nativa,
-   captura compras con Apple Pay (NFC). Ver [doc 08](docs/08-captura-apple-wallet-shortcut.md) y
-   [ADR-0002](docs/decisiones/ADR-0002-no-apple-wallet.md).
-2. **Belvo (open banking)** — fase posterior para cobertura total (online, tarjeta física, saldos).
-   Ver [ADR-0001](docs/decisiones/ADR-0001-belvo-como-agregador.md).
-3. **Registro manual** — efectivo y casos no cubiertos.
+## Stack (resumen)
+
+- **iOS:** Swift/SwiftUI nativo, mínimo iOS 17.
+- **Backend:** TypeScript + NestJS + Prisma + PostgreSQL.
+- **Agregador bancario:** Belvo (fase posterior al MVP).
+- **Desarrollo:** código en Windows (este entorno) + compilación/pruebas de iOS en Mac vía Xcode — ver [ADR-0005](docs/decisiones/ADR-0005-flujo-desarrollo-windows-mac.md).
+
+## Estructura del repo (planeada)
+
+```
+backend/    API en NestJS
+ios/        App SwiftUI
+docs/       Documentación de producto y arquitectura
+tools/      Scripts auxiliares (pruebas de integraciones, etc.)
+```

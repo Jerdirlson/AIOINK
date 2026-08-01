@@ -1,29 +1,36 @@
-# Secretos — nunca subir
-.env
-*.env
-!tools/.env.example
-
-# Node
+# Node / backend
 node_modules/
+dist/
+build/
+.env
+.env.*
+!.env.example
+*.log
 npm-debug.log*
 
-# Bases de datos locales y logs (SQLite del MVP)
-*.db
-*.db-wal
-*.db-shm
-*.log
+# Prisma
+backend/prisma/*.db
+backend/prisma/migrations/dev/
 
-# Python
-__pycache__/
-*.pyc
-.venv/
-venv/
+# iOS / Xcode
+ios/**/*.xcodeproj/xcuserdata/
+ios/**/*.xcworkspace/xcuserdata/
+ios/**/DerivedData/
+ios/**/*.xcuserstate
+ios/**/Pods/
+ios/**/.build/
+*.ipa
+*.dSYM.zip
+*.dSYM
 
-# macOS / iOS
+# macOS
 .DS_Store
-build/
-DerivedData/
 
-# Editores
+# Windows
+Thumbs.db
+desktop.ini
+
+# Editor / tooling
 .vscode/
 .idea/
+*.swp

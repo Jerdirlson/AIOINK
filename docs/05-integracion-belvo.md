@@ -1,43 +1,28 @@
-# 05 · Integración Belvo
+# 05 · Integración con Belvo
 
-[Belvo](https://belvo.com) es el agregador de open finance líder en LatAm y el único viable en Colombia.
-Cubre 60+ instituciones en México, Brasil y Colombia (Bancolombia, Davivienda, BBVA, Banco de Bogotá,
-Nequi, etc.).
+Fase posterior al MVP. Ver [ADR-0001](decisiones/ADR-0001-belvo-como-agregador.md) para el razonamiento de por qué Belvo sobre otras alternativas.
 
-## Capacidades que reutilizamos
+## Qué resuelve
 
-- **Categorización lista:** 15 categorías + 94 subcategorías en español, ~85% de precisión (NLP).
-- **Gastos recurrentes:** detecta suscripciones (Netflix, gimnasio) y servicios (luz, teléfono).
-- **Ingresos:** insights de fuentes de ingreso de los últimos 365 días.
+El Atajo de Apple Pay (MVP) solo captura pagos NFC. Belvo agrega, vía credenciales bancarias del usuario (Open Finance / screen scraping según el banco), lo que ese Atajo no ve:
+- Compras con tarjeta física o en línea.
+- Saldos reales de cuentas (no solo lo que la app calculó).
+- Movimientos históricos al momento de conectar la cuenta.
+- Categorización automática que provee Belvo (se usa como sugerencia inicial, no reemplaza el modelo propio de categorías).
 
-→ Gran parte de la "autocategorización" **no se construye desde cero**; se consume de Belvo y se le
-añade una capa de reglas/correcciones del usuario.
+## Modelo de trabajo
 
-## Flujo de conexión
+1. Sandbox de Belvo (gratis) para todo el desarrollo e integración inicial.
+2. Producción requiere aprobación de Belvo + plan de pago — se solicita cuando el MVP esté validado con usuarios reales, no antes.
+3. Flujo típico: el usuario conecta su banco desde la app (Belvo Widget o flujo propio) → backend recibe `link_id` → backend sincroniza cuentas y transacciones vía API de Belvo → se insertan como `Transaction` con `source = "belvo"` y `externalId` del movimiento.
 
-1. Backend pide a Belvo un `access_token` temporal para el widget.
-2. App abre el **Belvo Connect Widget** en `WKWebView`; el usuario elige banco y se autentica **dentro del widget** (sus credenciales nunca pasan por nuestra app/backend).
-3. Belvo devuelve un `link_id` (con `access_mode = recurrent`).
-4. Backend hace **pull histórico** de cuentas, balances y transacciones.
-5. Belvo notifica nuevas transacciones por **webhook** → cola → ingestión idempotente.
+## Consideraciones
 
-## Endpoints relevantes
+- **Deduplicación:** un gasto de Apple Pay ya registrado por el Atajo puede volver a aparecer al sincronizar con Belvo unos días después. Se resuelve por `externalId` (ver [04-modelo-datos.md](04-modelo-datos.md)) y, si Belvo no da un id estable comparable, por heurística de monto+fecha+comercio con confirmación del usuario en caso de duda.
+- **Frecuencia de sync:** polling periódico (ej. cada pocas horas) o webhooks de Belvo si están disponibles para el plan contratado.
+- **Bancos soportados en Colombia:** validar cobertura real de Belvo antes de comprometer bancos específicos en el marketing del producto.
+- **Costo:** Belvo cobra por conexión/uso en producción — impacta directamente el modelo de precios del plan Pro.
 
-- `POST /api/token/` — token del widget.
-- `Links`, `Accounts`, `Transactions` — datos base.
-- `Enrichment`: **Transactions categorization**, **Recurring Expenses**, **Incomes**.
-- **Webhooks**: `historical_update` y eventos de nuevas transacciones (validar firma).
+## Seguridad
 
-## Operación
-
-- Empezar en **sandbox** (gratis) con bancos de prueba antes de producción.
-- **Cotizar pricing** de producción (modelo por *link*/mensual) — define viabilidad económica.
-- Manejar estados de *link*: token vencido / requiere re-login (re-conexión guiada en la app).
-
-## Referencias
-
-- [Banking](https://belvo.com/products/banking/)
-- [Enrichment overview](https://developers.belvo.com/developer_resources/enrichment-overview)
-- [Recurring expenses](https://belvo.com/products/recurring-expenses/)
-- [API docs](https://developers.belvo.com/apis/belvoopenapispec)
-- [Categorización (blog)](https://belvo.com/blog/data-categorization-powered-open-banking/)
+Las credenciales bancarias del usuario nunca las ve ni las almacena el backend de IAOINK — el flujo de conexión (Belvo Widget) las maneja directamente Belvo. El backend solo guarda el `link_id`/token de acceso a la API de Belvo para ese usuario. Ver [07-seguridad-cumplimiento.md](07-seguridad-cumplimiento.md).

@@ -1,40 +1,56 @@
 # 01 · Visión y alcance
 
+## Qué es IAOINK
+
+Una app de finanzas personales para iOS que registra y categoriza los gastos e ingresos del usuario con la menor fricción manual posible, combinando captura automática (Apple Pay, SMS bancario, agregación bancaria vía Belvo) con captura asistida por IA (voz, foto de recibo, texto libre, WhatsApp).
+
+Referencia funcional: capturas de una app existente ("AI Money", Colombia) compartidas por el usuario el 2026-08-01. Se usan como inspiración de producto y UX, no se copia marca ni assets — el nombre, logo y diseño visual final de IAOINK son propios.
+
+## Usuario objetivo
+
+- Persona en Colombia con cuentas bancarias locales, que paga con tarjeta física, Apple Pay y efectivo.
+- Quiere ver en un vistazo: saldo total, en qué se está yendo la plata este mes, y si se está pasando del presupuesto.
+- No quiere digitar cada gasto a mano — valora que la app "adivine" la categoría y el monto.
+
 ## Problema
 
-Llevar las finanzas personales a mano es tedioso y se abandona. El usuario quiere que la app:
-1. Se **conecte al banco** y auto-registre lo que se compra con tarjeta (igual que MonAI).
-2. **Autocategorice** las transacciones sin esfuerzo manual.
-3. Dé **visibilidad y control**: en qué se gasta, presupuestos, suscripciones, metas.
+Las apps de control de gastos tradicionales dependen de que el usuario registre todo manualmente, lo cual se abandona en pocas semanas. La fricción de captura es la causa principal de abandono, no la falta de reportes.
 
-## Visión
+## Solución
 
-Una app de finanzas personales en iOS que, tras conectar el banco una sola vez, mantiene un panorama
-financiero actualizado y categorizado automáticamente, con alertas e insights accionables.
+Múltiples canales de captura de baja fricción que alimentan un mismo modelo de datos:
 
-## Usuarios y contexto
+1. **Automático real:** Atajo de iOS que detecta transacciones de Apple Pay (NFC) y las envía al backend. Agregación bancaria vía Belvo (fase posterior) para cuentas, saldos y movimientos que no pasan por Apple Pay.
+2. **Semi-automático:** lectura de SMS bancarios (parseo de texto), bot de WhatsApp para registrar gastos por chat.
+3. **Asistido por IA:** dictado por voz, foto de un recibo (OCR), nota de texto libre — en los tres casos un modelo extrae comercio/monto/categoría.
+4. **Manual:** formulario clásico, siempre disponible como fallback.
 
-- **Usuario inicial:** el autor del proyecto (Colombia), desarrollador con experiencia.
-- **Mercado:** Colombia (define el agregador bancario = Belvo).
+Sobre esa base de datos: dashboard, presupuestos por categoría, metas de ahorro, seguimiento de deudas y reportes (barras por categoría, distribución en dona, saldo/ingresos/gastos mensuales).
 
 ## Alcance del MVP
 
-**Incluye**
-- Login con Sign in with Apple.
-- Conexión de uno o varios bancos vía Belvo.
-- Ingesta automática de transacciones + categorización.
-- Registro manual de gastos en efectivo.
-- Dashboard de gastos/ingresos por categoría.
-- Presupuestos básicos por categoría.
+Incluye:
+- Registro manual de transacciones (cuentas, categorías, montos).
+- Captura automática vía Atajo de Apple Pay.
+- Dashboard de inicio (cuentas, saldo, gastos del mes, últimas transacciones).
+- Listado de transacciones con filtros por categoría/cuenta/fecha.
+- Reportes básicos (gasto por categoría, saldo mensual).
+- Backend propio (NestJS + PostgreSQL) como fuente de verdad.
+- App iOS nativa (SwiftUI), un solo usuario por cuenta (sin multi-usuario/hogar todavía).
 
-**Fuera del MVP (después)**
-- Metas de ahorro avanzadas y proyecciones.
-- Fallback de categorización con LLM.
-- Multi-moneda real (el MVP asume COP).
-- Versión Android / web.
+Explícitamente fuera del MVP (fases posteriores, ver [08-roadmap.md](08-roadmap.md)):
+- Agregación bancaria vía Belvo (requiere aprobación de producción).
+- Bot de WhatsApp, SMS bancario automático, Scan AI, Mic AI, Notas AI.
+- Presupuestos, metas de ahorro y deudas como módulos completos (el MVP los deja ver vacíos/placeholder).
+- Multi-moneda y multi-país (se arranca fijo en COP / Colombia).
+- Plan Pro / monetización.
 
 ## No-objetivos
 
-- No es una app de inversión/trading.
-- No almacena números de tarjeta (PAN) ni credenciales bancarias.
-- No accede a Apple Wallet (no es posible para terceros).
+- No es un agregador de inversiones ni de criptomonedas.
+- No es multi-usuario/compartido (billetera familiar) en esta fase.
+- No busca reemplazar la banca — nunca inicia transferencias ni pagos, solo lee y registra.
+
+## Métrica de éxito del MVP
+
+Que el usuario registre gastos por al menos 3 semanas seguidas sin abandonar la app, gracias a que la mayoría de transacciones entran solas (Apple Pay) y las manuales toman menos de 10 segundos.
