@@ -1,0 +1,22 @@
+# Postgres local para desarrollo. Arrancar con: docker compose up -d
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: iaoink-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: iaoink
+      POSTGRES_PASSWORD: iaoink_dev
+      POSTGRES_DB: iaoink
+    ports:
+      - "5433:5432"
+    volumes:
+      - iaoink_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U iaoink -d iaoink"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  iaoink_pgdata:

@@ -1,0 +1,162 @@
+// Modelo de datos de IAOINK. Ver docs/04-modelo-datos.md para el racional.
+// Regla transversal: todos los montos son enteros en la unidad menor de la
+// moneda (centavos), nunca decimales — evita errores de coma flotante.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// La URL de conexión vive en prisma.config.ts (Prisma 7 ya no la acepta aquí).
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum AccountType {
+  CASH
+  DEBIT
+  CREDIT
+  SAVINGS
+}
+
+enum CategoryKind {
+  EXPENSE
+  INCOME
+  SYSTEM
+}
+
+enum TransactionType {
+  EXPENSE
+  INCOME
+  TRANSFER
+}
+
+/// Canal por el que entró la transacción. Se declara completo desde el MVP
+/// aunque solo se usen MANUAL y APPLE_PAY_SHORTCUT, para no forzar una
+/// migración cuando se agreguen los demás canales (ver docs/06).
+enum TransactionSource {
+  MANUAL
+  APPLE_PAY_SHORTCUT
+  SMS
+  WHATSAPP
+  SCAN_AI
+  MIC_AI
+  NOTES_AI
+  BELVO
+}
+
+enum Plan {
+  FREE
+  PRO
+}
+
+// ---------------------------------------------------------------------------
+// Modelos
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  avatarUrl    String?
+  currency     String   @default("COP")
+  country      String   @default("CO")
+  locale       String   @default("es")
+  plan         Plan     @default(FREE)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  accounts     Account[]
+  categories   Category[]
+  transactions Transaction[]
+
+  @@map("users")
+}
+
+model Account {
+  id         String      @id @default(uuid())
+  userId     String
+  name       String
+  type       AccountType
+  currency   String      @default("COP")
+  isArchived Boolean     @default(false)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  /// No hay campo de saldo: el saldo es siempre SUM(transactions.amount).
+  /// El saldo de apertura se materializa como una transacción de la categoría
+  /// de sistema "Saldo inicial", así hay una sola fuente de verdad.
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Category {
+  id       String       @id @default(uuid())
+  /// Toda categoría pertenece a un usuario, incluidas las de sistema: así
+  /// cada consulta filtra por userId sin casos especiales y borrar la cuenta
+  /// limpia en cascada. Las de sistema se distinguen por `isSystem`.
+  userId   String
+  name     String
+  /// Nombre del SF Symbol usado por la app iOS (ver docs/09 §4).
+  icon     String       @default("ellipsis.circle.fill")
+  kind     CategoryKind
+  /// Las categorías de sistema (Saldo inicial, Transferencia) se crean al
+  /// registrar al usuario y no se pueden editar ni borrar.
+  isSystem Boolean      @default(false)
+  /// Slot de color del gráfico (1..8, ver docs/09 §8). null = "Otros".
+  colorSlot Int?
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@unique([userId, name])
+  @@index([userId])
+  @@map("categories")
+}
+
+model Transaction {
+  id          String            @id @default(uuid())
+  userId      String
+  accountId   String
+  categoryId  String
+  /// Monto en centavos, CON SIGNO: negativo = sale dinero de la cuenta,
+  /// positivo = entra. Se guarda con signo (en vez de positivo + `type`)
+  /// para que el saldo sea SUM(amount) y una transferencia sea simplemente
+  /// un par -X / +X, sin lógica condicional en cada consulta.
+  /// `type` queda como etiqueta semántica y el servicio valida que el signo
+  /// concuerde con ella.
+  amount      BigInt
+  currency    String            @default("COP")
+  type        TransactionType
+  description String
+  note        String?
+  occurredAt  DateTime
+  source      TransactionSource @default(MANUAL)
+  /// Identificador en el sistema de origen (Belvo, etc.) para deduplicar.
+  externalId  String?
+  /// Enlaza las dos transacciones que componen una transferencia entre
+  /// cuentas propias (ver docs/04).
+  transferGroupId String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account  Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@unique([source, externalId])
+  @@index([userId, occurredAt])
+  @@index([accountId])
+  @@index([categoryId])
+  @@index([transferGroupId])
+  @@map("transactions")
+}
