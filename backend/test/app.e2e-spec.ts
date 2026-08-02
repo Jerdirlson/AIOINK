@@ -87,6 +87,39 @@ interface PerfilResp {
   currency: string;
 }
 
+interface PresupuestoResp {
+  id: string;
+  amount: number;
+  spent: number;
+  remaining: number;
+  percentage: number;
+  status: 'OK' | 'WARNING' | 'EXCEEDED';
+}
+
+interface MetaResp {
+  id: string;
+  currentAmount: number;
+  targetAmount: number;
+  remaining: number;
+  percentage: number;
+  completed: boolean;
+}
+
+interface DeudaResp {
+  id: string;
+  totalAmount: number;
+  remainingAmount: number;
+  paid: number;
+  percentagePaid: number;
+  settled: boolean;
+}
+
+interface ResumenDeudasResp {
+  owedByMe: number;
+  owedToMe: number;
+  net: number;
+}
+
 const cuerpo = <T>(res: request.Response): T => res.body as T;
 
 /**
@@ -602,6 +635,295 @@ describe('IAOINK API (e2e)', () => {
         .patch('/api/users/me')
         .set(auth())
         .send({ email: 'otro@correo.com' })
+        .expect(400);
+    });
+  });
+
+  describe('presupuestos', () => {
+    let presupuestoId: string;
+
+    it('rechaza presupuestar una categoría del sistema', async () => {
+      const categorias = await http()
+        .get('/api/categories')
+        .set(auth())
+        .expect(200);
+
+      const sistema = cuerpo<CategoriaResp[]>(categorias).find(
+        (c) => c.isSystem,
+      );
+
+      await http()
+        .post('/api/budgets')
+        .set(auth())
+        .send({ categoryId: sistema!.id, amount: 10000000 })
+        .expect(400);
+    });
+
+    it('crea un presupuesto y refleja lo ya gastado en la categoría', async () => {
+      // Comida lleva $80.000 gastados de los bloques anteriores.
+      const res = await http()
+        .post('/api/budgets')
+        .set(auth())
+        .send({ categoryId: categoriaComidaId, amount: 10000000 }) // $100.000
+        .expect(201);
+
+      const presupuesto = cuerpo<PresupuestoResp>(res);
+      presupuestoId = presupuesto.id;
+
+      expect(presupuesto.spent).toBe(8000000);
+      expect(presupuesto.remaining).toBe(2000000);
+      expect(presupuesto.percentage).toBe(80);
+      // Justo en el umbral del 80 %.
+      expect(presupuesto.status).toBe('WARNING');
+    });
+
+    it('no permite dos presupuestos para la misma categoría', async () => {
+      await http()
+        .post('/api/budgets')
+        .set(auth())
+        .send({ categoryId: categoriaComidaId, amount: 5000000 })
+        .expect(409);
+    });
+
+    it('al subir el límite vuelve a estado OK', async () => {
+      const res = await http()
+        .patch(`/api/budgets/${presupuestoId}`)
+        .set(auth())
+        .send({ amount: 50000000 }) // $500.000
+        .expect(200);
+
+      const presupuesto = cuerpo<PresupuestoResp>(res);
+      expect(presupuesto.status).toBe('OK');
+      expect(presupuesto.percentage).toBe(16);
+    });
+
+    it('un gasto nuevo lo empuja a excedido', async () => {
+      await http()
+        .post('/api/transactions')
+        .set(auth())
+        .send({
+          accountId: cuentaPrincipalId,
+          categoryId: categoriaComidaId,
+          amount: -45000000, // $450.000 más
+          type: TransactionType.EXPENSE,
+          description: 'Mercado grande',
+          occurredAt: new Date().toISOString(),
+        })
+        .expect(201);
+
+      const res = await http()
+        .get(`/api/budgets/${presupuestoId}`)
+        .set(auth())
+        .expect(200);
+
+      const presupuesto = cuerpo<PresupuestoResp>(res);
+      expect(presupuesto.spent).toBe(53000000);
+      expect(presupuesto.status).toBe('EXCEEDED');
+      expect(presupuesto.remaining).toBeLessThan(0);
+    });
+
+    it('rechaza un límite negativo', async () => {
+      await http()
+        .post('/api/budgets')
+        .set(auth())
+        .send({ categoryId: categoriaComidaId, amount: -1000 })
+        .expect(400);
+    });
+
+    it('elimina el presupuesto', async () => {
+      await http()
+        .delete(`/api/budgets/${presupuestoId}`)
+        .set(auth())
+        .expect(204);
+
+      const res = await http().get('/api/budgets').set(auth()).expect(200);
+      expect(cuerpo<PresupuestoResp[]>(res)).toHaveLength(0);
+    });
+  });
+
+  describe('metas de ahorro', () => {
+    let metaId: string;
+
+    it('crea una meta y calcula el progreso', async () => {
+      const res = await http()
+        .post('/api/savings')
+        .set(auth())
+        .send({
+          name: 'Viaje a fin de año',
+          targetAmount: 200000000, // $2.000.000
+          currentAmount: 50000000, // $500.000
+        })
+        .expect(201);
+
+      const meta = cuerpo<MetaResp>(res);
+      metaId = meta.id;
+
+      expect(meta.percentage).toBe(25);
+      expect(meta.remaining).toBe(150000000);
+      expect(meta.completed).toBe(false);
+    });
+
+    it('un aporte sube el acumulado', async () => {
+      const res = await http()
+        .post(`/api/savings/${metaId}/contribute`)
+        .set(auth())
+        .send({ amount: 50000000 })
+        .expect(201);
+
+      const meta = cuerpo<MetaResp>(res);
+      expect(meta.currentAmount).toBe(100000000);
+      expect(meta.percentage).toBe(50);
+    });
+
+    it('acepta un aporte negativo para corregir', async () => {
+      const res = await http()
+        .post(`/api/savings/${metaId}/contribute`)
+        .set(auth())
+        .send({ amount: -20000000 })
+        .expect(201);
+
+      expect(cuerpo<MetaResp>(res).currentAmount).toBe(80000000);
+    });
+
+    it('no deja retirar más de lo ahorrado', async () => {
+      await http()
+        .post(`/api/savings/${metaId}/contribute`)
+        .set(auth())
+        .send({ amount: -999999999 })
+        .expect(400);
+    });
+
+    it('rechaza un aporte de 0', async () => {
+      await http()
+        .post(`/api/savings/${metaId}/contribute`)
+        .set(auth())
+        .send({ amount: 0 })
+        .expect(400);
+    });
+
+    it('marca la meta como cumplida al llegar al objetivo', async () => {
+      const res = await http()
+        .post(`/api/savings/${metaId}/contribute`)
+        .set(auth())
+        .send({ amount: 120000000 })
+        .expect(201);
+
+      const meta = cuerpo<MetaResp>(res);
+      expect(meta.completed).toBe(true);
+      expect(meta.percentage).toBe(100);
+      expect(meta.remaining).toBe(0);
+    });
+
+    it('el porcentaje no pasa de 100 aunque se ahorre de más', async () => {
+      const res = await http()
+        .post(`/api/savings/${metaId}/contribute`)
+        .set(auth())
+        .send({ amount: 100000000 })
+        .expect(201);
+
+      const meta = cuerpo<MetaResp>(res);
+      expect(meta.percentage).toBe(100);
+      expect(meta.remaining).toBe(0);
+    });
+  });
+
+  describe('deudas', () => {
+    let deudaId: string;
+
+    it('crea una deuda propia con el pendiente igual al total', async () => {
+      const res = await http()
+        .post('/api/debts')
+        .set(auth())
+        .send({
+          name: 'Préstamo del carro',
+          counterparty: 'Banco',
+          direction: 'OWED_BY_ME',
+          totalAmount: 1200000000, // $12.000.000
+        })
+        .expect(201);
+
+      const deuda = cuerpo<DeudaResp>(res);
+      deudaId = deuda.id;
+
+      expect(deuda.remainingAmount).toBe(1200000000);
+      expect(deuda.paid).toBe(0);
+      expect(deuda.settled).toBe(false);
+    });
+
+    it('rechaza un pendiente mayor que el total', async () => {
+      await http()
+        .post('/api/debts')
+        .set(auth())
+        .send({
+          name: 'Incoherente',
+          direction: 'OWED_BY_ME',
+          totalAmount: 1000,
+          remainingAmount: 5000,
+        })
+        .expect(400);
+    });
+
+    it('un abono reduce el pendiente', async () => {
+      const res = await http()
+        .post(`/api/debts/${deudaId}/pay`)
+        .set(auth())
+        .send({ amount: 300000000 }) // $3.000.000
+        .expect(201);
+
+      const deuda = cuerpo<DeudaResp>(res);
+      expect(deuda.remainingAmount).toBe(900000000);
+      expect(deuda.paid).toBe(300000000);
+      expect(deuda.percentagePaid).toBe(25);
+    });
+
+    it('no deja abonar más que el pendiente', async () => {
+      await http()
+        .post(`/api/debts/${deudaId}/pay`)
+        .set(auth())
+        .send({ amount: 999999999999 })
+        .expect(400);
+    });
+
+    it('el resumen separa lo que debo de lo que me deben', async () => {
+      await http()
+        .post('/api/debts')
+        .set(auth())
+        .send({
+          name: 'Le presté a Camilo',
+          direction: 'OWED_TO_ME',
+          totalAmount: 50000000,
+        })
+        .expect(201);
+
+      const res = await http()
+        .get('/api/debts/summary')
+        .set(auth())
+        .expect(200);
+
+      const resumen = cuerpo<ResumenDeudasResp>(res);
+      expect(resumen.owedByMe).toBe(900000000);
+      expect(resumen.owedToMe).toBe(50000000);
+      expect(resumen.net).toBe(50000000 - 900000000);
+    });
+
+    it('saldar la deuda la marca como settled', async () => {
+      const res = await http()
+        .post(`/api/debts/${deudaId}/pay`)
+        .set(auth())
+        .send({ amount: 900000000 })
+        .expect(201);
+
+      const deuda = cuerpo<DeudaResp>(res);
+      expect(deuda.settled).toBe(true);
+      expect(deuda.remainingAmount).toBe(0);
+      expect(deuda.percentagePaid).toBe(100);
+    });
+
+    it('no deja abonar a una deuda ya saldada', async () => {
+      await http()
+        .post(`/api/debts/${deudaId}/pay`)
+        .set(auth())
+        .send({ amount: 1000 })
         .expect(400);
     });
   });

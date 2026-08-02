@@ -38,19 +38,23 @@ Las categorías de sistema son **por usuario**, no globales: se crean al registr
 - `externalId` (nullable — id en Belvo u otro origen externo, para deduplicar)
 - `transferGroupId` (nullable — enlaza las dos transacciones de una transferencia entre cuentas propias)
 
-### Budget (presupuesto) — fase 2
+### Budget (presupuesto)
 - `id`, `userId`, `categoryId`
-- `amount`, `period` (`monthly`)
-- `startDate`
+- `amount` (límite en centavos, positivo), `period` (`MONTHLY`)
+- Uno por categoría (`@@unique([userId, categoryId])`): dos límites simultáneos sobre la misma categoría no tendrían un significado claro.
+- **No guarda cuánto se lleva gastado** — se calcula sumando las transacciones de la categoría en el periodo, igual que el saldo de una cuenta. Un contador almacenado se desincronizaría al editar o borrar una transacción.
+- Solo aplica a categorías de gasto: presupuestar un ingreso o una categoría de sistema no significa nada.
 
-### SavingGoal (meta de ahorro) — fase 2
-- `id`, `userId`, `accountId` (opcional, cuenta asociada)
-- `name`, `targetAmount`, `currentAmount`, `targetDate`
-
-### Debt (deuda) — fase 2
+### SavingGoal (meta de ahorro)
 - `id`, `userId`
-- `name`, `counterparty` (a quién se debe o quién debe), `direction` (`owed_by_me` | `owed_to_me`)
+- `name`, `targetAmount`, `currentAmount`, `targetDate`
+- `currentAmount` **sí** se almacena, y no contradice la regla anterior: no se deriva de ninguna transacción, es un dato que el usuario afirma mediante aportes. Vincular la meta al saldo de una cuenta queda pendiente.
+
+### Debt (deuda)
+- `id`, `userId`
+- `name`, `counterparty` (a quién se debe o quién debe), `direction` (`OWED_BY_ME` | `OWED_TO_ME`)
 - `totalAmount`, `remainingAmount`, `dueDate`
+- `remainingAmount` se almacena por el mismo motivo que `currentAmount`: lo asienta el usuario con cada abono. Se valida que nunca supere el total ni baje de 0.
 
 ## Relaciones clave
 

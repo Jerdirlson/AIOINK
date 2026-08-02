@@ -53,6 +53,19 @@ enum Plan {
   PRO
 }
 
+/// Por ahora solo mensual, que es como se piensa un presupuesto doméstico.
+/// El enum existe para no migrar cuando se agreguen semanal o anual.
+enum BudgetPeriod {
+  MONTHLY
+}
+
+enum DebtDirection {
+  /// Yo le debo a alguien.
+  OWED_BY_ME
+  /// Alguien me debe a mí.
+  OWED_TO_ME
+}
+
 // ---------------------------------------------------------------------------
 // Modelos
 // ---------------------------------------------------------------------------
@@ -74,8 +87,85 @@ model User {
   categories     Category[]
   transactions   Transaction[]
   shortcutTokens ShortcutToken[]
+  budgets        Budget[]
+  savingGoals    SavingGoal[]
+  debts          Debt[]
 
   @@map("users")
+}
+
+/// Límite de gasto para una categoría en un periodo.
+///
+/// No guarda cuánto se lleva gastado: eso se calcula sumando las
+/// transacciones de la categoría en el periodo, igual que el saldo de una
+/// cuenta. Un contador almacenado se desincronizaría al editar o borrar una
+/// transacción.
+model Budget {
+  id         String       @id @default(uuid())
+  userId     String
+  categoryId String
+  /// Límite en centavos, siempre positivo.
+  amount     BigInt
+  period     BudgetPeriod @default(MONTHLY)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  /// Un presupuesto por categoría: dos límites simultáneos para la misma
+  /// categoría no tendrían un significado claro.
+  @@unique([userId, categoryId])
+  @@index([userId])
+  @@map("budgets")
+}
+
+/// Meta de ahorro con seguimiento manual.
+///
+/// `currentAmount` sí se almacena, y no contradice la regla de "no guardar lo
+/// derivable": no se deriva de ninguna transacción, es un dato que el usuario
+/// afirma mediante aportes. Vincular la meta al saldo de una cuenta queda
+/// para más adelante.
+model SavingGoal {
+  id           String    @id @default(uuid())
+  userId       String
+  name         String
+  /// Monto objetivo en centavos, positivo.
+  targetAmount BigInt
+  /// Acumulado en centavos. Nunca negativo.
+  currentAmount BigInt   @default(0)
+  targetDate   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("saving_goals")
+}
+
+/// Deuda propia o de un tercero. `remainingAmount` se almacena por el mismo
+/// motivo que en SavingGoal: lo asienta el usuario con cada abono, no se
+/// deriva de las transacciones.
+model Debt {
+  id              String        @id @default(uuid())
+  userId          String
+  name            String
+  /// A quién le debo, o quién me debe.
+  counterparty    String?
+  direction       DebtDirection
+  /// Monto original en centavos, positivo.
+  totalAmount     BigInt
+  /// Pendiente en centavos. Entre 0 y totalAmount.
+  remainingAmount BigInt
+  dueDate         DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("debts")
 }
 
 /// Token de larga duración para el Atajo de iOS (Apple Pay). Es aparte de la
@@ -142,6 +232,7 @@ model Category {
 
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   transactions Transaction[]
+  budgets      Budget[]
 
   @@unique([userId, name])
   @@index([userId])

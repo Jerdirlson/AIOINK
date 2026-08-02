@@ -89,6 +89,12 @@ prisma/
 | `GET` | `/api/reports/summary` | Ingresos, gastos y saldo del periodo |
 | `GET` | `/api/reports/by-category` | Gasto por categoría, de mayor a menor |
 | `GET` | `/api/reports/monthly` | Serie mensual de ingresos y gastos |
+| `GET/POST/PATCH/DELETE` | `/api/budgets` | Presupuestos con gasto del periodo y estado |
+| `GET/POST/PATCH/DELETE` | `/api/savings` | Metas de ahorro con su progreso |
+| `POST` | `/api/savings/:id/contribute` | Registra un aporte (o retiro) |
+| `GET/POST/PATCH/DELETE` | `/api/debts` | Deudas propias y de terceros |
+| `GET` | `/api/debts/summary` | Totales de lo que debo y lo que me deben |
+| `POST` | `/api/debts/:id/pay` | Registra un abono |
 | `GET/POST/DELETE` | `/api/shortcut-tokens` | Tokens del Atajo de iOS |
 | `POST` | `/api/integrations/apple-pay` | Entrada del Atajo (token propio, no JWT) |
 
@@ -115,6 +121,12 @@ guard en un controlador nuevo no abre un hueco.
 **Las categorías de sistema son por usuario**, no globales, para que toda
 consulta filtre por `userId` sin casos especiales.
 
+**El gasto de un presupuesto se calcula, no se guarda**, por el mismo motivo
+que el saldo de una cuenta. En cambio el acumulado de una meta de ahorro y el
+pendiente de una deuda sí se almacenan: no se derivan de ninguna transacción,
+son datos que el usuario asienta con cada aporte o abono. La regla no es "nunca
+guardar números", es "nunca guardar lo que ya se puede derivar".
+
 **Los reportes excluyen las categorías del sistema.** El "Saldo inicial" no es
 un ingreso (es dinero que ya existía) y una transferencia entre cuentas propias
 no es ni gasto ni ingreso. Contarlos inflaría los totales y descuadraría los
@@ -140,3 +152,19 @@ corrupto en silencio.
 Desde la versión 7, la URL de conexión no va en `schema.prisma` sino en
 `prisma.config.ts`, y el cliente en runtime se conecta a través de un *driver
 adapter* (`@prisma/adapter-pg`). Ver `src/prisma/prisma.service.ts`.
+
+**`prisma migrate dev` exige una terminal interactiva** y falla en entornos
+automatizados. Para crear una migración sin TTY:
+
+```bash
+mkdir -p prisma/migrations/$(date +%Y%m%d%H%M%S)_nombre_descriptivo
+npx prisma migrate diff \
+  --from-config-datasource \
+  --to-schema prisma/schema.prisma \
+  --script -o prisma/migrations/<carpeta>/migration.sql
+npx prisma migrate deploy
+npx prisma generate
+```
+
+Conviene revisar el SQL generado antes de aplicarlo, sobre todo si añade
+restricciones sobre tablas con datos.
