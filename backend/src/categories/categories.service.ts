@@ -105,6 +105,35 @@ export class CategoriesService {
     return categoria;
   }
 
+  /**
+   * Categoría a la que van las transacciones que entran por un canal
+   * automático y todavía no se han clasificado (Apple Pay, ver docs/06).
+   * Prefiere "Otros"; si el usuario la renombró o borró, cae en cualquier
+   * categoría de gasto suya.
+   */
+  async obtenerParaAutoCategorizar(userId: string): Promise<Category> {
+    const otros = await this.prisma.category.findFirst({
+      where: { userId, kind: 'EXPENSE', name: 'Otros' },
+    });
+
+    if (otros) {
+      return otros;
+    }
+
+    const cualquiera = await this.prisma.category.findFirst({
+      where: { userId, kind: 'EXPENSE' },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    if (!cualquiera) {
+      throw new NotFoundException(
+        'El usuario no tiene ninguna categoría de gasto',
+      );
+    }
+
+    return cualquiera;
+  }
+
   private rechazarSiEsDelSistema(categoria: Category, accion: string): void {
     if (categoria.isSystem) {
       throw new ForbiddenException(

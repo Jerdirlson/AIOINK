@@ -70,11 +70,35 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  accounts     Account[]
-  categories   Category[]
-  transactions Transaction[]
+  accounts       Account[]
+  categories     Category[]
+  transactions   Transaction[]
+  shortcutTokens ShortcutToken[]
 
   @@map("users")
+}
+
+/// Token de larga duración para el Atajo de iOS (Apple Pay). Es aparte de la
+/// sesión normal para que el Atajo siga funcionando sin reautenticar y se
+/// pueda revocar solo, sin cerrar la sesión del usuario (ver docs/07).
+model ShortcutToken {
+  id        String    @id @default(uuid())
+  userId    String
+  /// Solo se guarda el hash: el token en claro se muestra una única vez al
+  /// crearlo, igual que una API key.
+  tokenHash String    @unique
+  name      String
+  /// Cuenta a la que se cargan las transacciones que llegan con este token.
+  accountId String
+  lastUsedAt DateTime?
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("shortcut_tokens")
 }
 
 model Account {
@@ -90,8 +114,9 @@ model Account {
   /// El saldo de apertura se materializa como una transacción de la categoría
   /// de sistema "Saldo inicial", así hay una sola fuente de verdad.
 
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  transactions Transaction[]
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions   Transaction[]
+  shortcutTokens ShortcutToken[]
 
   @@index([userId])
   @@map("accounts")
@@ -153,7 +178,9 @@ model Transaction {
   account  Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
   category Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
 
-  @@unique([source, externalId])
+  /// Por usuario, no global: dos usuarios distintos podrían recibir el mismo
+  /// externalId de sus respectivos Atajos y no deben colisionar entre sí.
+  @@unique([userId, source, externalId])
   @@index([userId, occurredAt])
   @@index([accountId])
   @@index([categoryId])

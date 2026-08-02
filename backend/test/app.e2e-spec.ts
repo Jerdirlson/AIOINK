@@ -45,6 +45,48 @@ interface ErrorResp {
   statusCode: number;
 }
 
+interface ResumenResp {
+  income: number;
+  expense: number;
+  balance: number;
+}
+
+interface PorCategoriaResp {
+  total: number;
+  items: {
+    categoryId: string;
+    name: string;
+    total: number;
+    percentage: number;
+    colorSlot: number | null;
+  }[];
+}
+
+interface MesResp {
+  month: string;
+  income: number;
+  expense: number;
+  balance: number;
+}
+
+interface TokenAtajoResp {
+  id: string;
+  name: string;
+  token: string;
+}
+
+interface ApplePayResp {
+  transaction: TransaccionResp;
+  duplicated: boolean;
+}
+
+interface PerfilResp {
+  id: string;
+  name: string;
+  locale: string;
+  currency: string;
+}
+
 const cuerpo = <T>(res: request.Response): T => res.body as T;
 
 /**
@@ -362,6 +404,208 @@ describe('IAOINK API (e2e)', () => {
     });
   });
 
+  describe('reportes', () => {
+    // En este punto el usuario tiene: saldo inicial de $10.000.000 (categoría
+    // de sistema) y un gasto de $80.000 en Comida. La transferencia ya se
+    // eliminó en el bloque anterior.
+
+    it('el resumen no cuenta el saldo inicial como ingreso', async () => {
+      const res = await http()
+        .get('/api/reports/summary')
+        .set(auth())
+        .expect(200);
+
+      const resumen = cuerpo<ResumenResp>(res);
+
+      // Si contara el saldo inicial, income seria 1.000.000.000.
+      expect(resumen.income).toBe(0);
+      expect(resumen.expense).toBe(8000000);
+      expect(resumen.balance).toBe(-8000000);
+    });
+
+    it('el gasto por categoría devuelve totales positivos y porcentajes', async () => {
+      const res = await http()
+        .get('/api/reports/by-category')
+        .set(auth())
+        .expect(200);
+
+      const reporte = cuerpo<PorCategoriaResp>(res);
+
+      expect(reporte.total).toBe(8000000);
+      expect(reporte.items).toHaveLength(1);
+      expect(reporte.items[0].name).toBe('Comida');
+      expect(reporte.items[0].total).toBe(8000000);
+      expect(reporte.items[0].percentage).toBe(100);
+    });
+
+    it('la serie mensual incluye el mes en curso', async () => {
+      const res = await http()
+        .get('/api/reports/monthly?months=3')
+        .set(auth())
+        .expect(200);
+
+      const meses = cuerpo<MesResp[]>(res);
+      const mesActual = new Date().toISOString().slice(0, 7);
+      const actual = meses.find((m) => m.month === mesActual);
+
+      expect(actual).toBeDefined();
+      expect(actual!.expense).toBe(8000000);
+    });
+
+    it('rechaza un rango de fechas invertido', async () => {
+      await http()
+        .get('/api/reports/summary?from=2026-08-10&to=2026-08-01')
+        .set(auth())
+        .expect(400);
+    });
+  });
+
+  describe('Atajo de iOS y Apple Pay', () => {
+    let tokenAtajo: string;
+    let tokenAtajoId: string;
+
+    it('crea un token y devuelve el valor en claro una sola vez', async () => {
+      const res = await http()
+        .post('/api/shortcut-tokens')
+        .set(auth())
+        .send({ name: 'iPhone de pruebas', accountId: cuentaPrincipalId })
+        .expect(201);
+
+      const creado = cuerpo<TokenAtajoResp>(res);
+      expect(creado.token).toEqual(expect.any(String));
+      tokenAtajo = creado.token;
+      tokenAtajoId = creado.id;
+
+      // Al listarlos, el token en claro ya no aparece.
+      const lista = await http()
+        .get('/api/shortcut-tokens')
+        .set(auth())
+        .expect(200);
+
+      const tokens = cuerpo<Record<string, unknown>[]>(lista);
+      expect(tokens).toHaveLength(1);
+      expect(tokens[0].token).toBeUndefined();
+      expect(tokens[0].tokenHash).toBeUndefined();
+    });
+
+    it('rechaza el webhook sin token', async () => {
+      await http()
+        .post('/api/integrations/apple-pay')
+        .send({ merchant: 'Juan Valdez', amountCents: 1500000 })
+        .expect(401);
+    });
+
+    it('rechaza el webhook con un token inventado', async () => {
+      await http()
+        .post('/api/integrations/apple-pay')
+        .set({ 'x-shortcut-token': 'token-que-no-existe' })
+        .send({ merchant: 'Juan Valdez', amountCents: 1500000 })
+        .expect(401);
+    });
+
+    it('registra el pago como gasto en la cuenta del token', async () => {
+      const res = await http()
+        .post('/api/integrations/apple-pay')
+        .set({ 'x-shortcut-token': tokenAtajo })
+        .send({
+          merchant: 'Juan Valdez',
+          amountCents: 1500000, // $15.000
+          externalId: 'apple-pay-001',
+        })
+        .expect(201);
+
+      const resultado = cuerpo<ApplePayResp>(res);
+      expect(resultado.duplicated).toBe(false);
+      // El Atajo manda positivo; se guarda como gasto (negativo).
+      expect(resultado.transaction.amount).toBe(-1500000);
+      expect(resultado.transaction.description).toBe('Juan Valdez');
+
+      const cuenta = await http()
+        .get(`/api/accounts/${cuentaPrincipalId}`)
+        .set(auth())
+        .expect(200);
+
+      expect(cuerpo<CuentaResp>(cuenta).balance).toBe(
+        1000000000 - 8000000 - 1500000,
+      );
+    });
+
+    it('reenviar el mismo pago no lo duplica', async () => {
+      const res = await http()
+        .post('/api/integrations/apple-pay')
+        .set({ 'x-shortcut-token': tokenAtajo })
+        .send({
+          merchant: 'Juan Valdez',
+          amountCents: 1500000,
+          externalId: 'apple-pay-001',
+        })
+        .expect(201);
+
+      expect(cuerpo<ApplePayResp>(res).duplicated).toBe(true);
+
+      const cuenta = await http()
+        .get(`/api/accounts/${cuentaPrincipalId}`)
+        .set(auth())
+        .expect(200);
+
+      // El saldo no se movió con el reenvío.
+      expect(cuerpo<CuentaResp>(cuenta).balance).toBe(
+        1000000000 - 8000000 - 1500000,
+      );
+    });
+
+    it('rechaza un monto negativo', async () => {
+      await http()
+        .post('/api/integrations/apple-pay')
+        .set({ 'x-shortcut-token': tokenAtajo })
+        .send({ merchant: 'Negativo', amountCents: -1000 })
+        .expect(400);
+    });
+
+    it('un token revocado deja de funcionar', async () => {
+      await http()
+        .delete(`/api/shortcut-tokens/${tokenAtajoId}`)
+        .set(auth())
+        .expect(204);
+
+      await http()
+        .post('/api/integrations/apple-pay')
+        .set({ 'x-shortcut-token': tokenAtajo })
+        .send({ merchant: 'Despues de revocar', amountCents: 1000 })
+        .expect(401);
+    });
+  });
+
+  describe('perfil', () => {
+    it('GET /api/users/me devuelve el perfil sin el hash de contraseña', async () => {
+      const res = await http().get('/api/users/me').set(auth()).expect(200);
+
+      const perfil = cuerpo<Record<string, unknown>>(res);
+      expect(perfil.email).toBe(email);
+      expect(perfil.passwordHash).toBeUndefined();
+    });
+
+    it('PATCH /api/users/me edita el perfil', async () => {
+      const res = await http()
+        .patch('/api/users/me')
+        .set(auth())
+        .send({ name: 'Nombre Editado', locale: 'en' })
+        .expect(200);
+
+      const perfil = cuerpo<PerfilResp>(res);
+      expect(perfil.name).toBe('Nombre Editado');
+      expect(perfil.locale).toBe('en');
+    });
+
+    it('no permite cambiar el correo por esta vía', async () => {
+      await http()
+        .patch('/api/users/me')
+        .set(auth())
+        .send({ email: 'otro@correo.com' })
+        .expect(400);
+    });
+  });
+
   describe('aislamiento entre usuarios', () => {
     it('un usuario no ve ni toca las cuentas de otro', async () => {
       const otroEmail = `e2e-otro-${Date.now()}@iaoink.test`;
@@ -389,6 +633,53 @@ describe('IAOINK API (e2e)', () => {
         .expect(404);
 
       await prisma.user.deleteMany({ where: { email: otroEmail } });
+    });
+  });
+
+  // Va de último: destruye el usuario con el que trabajan los demás bloques.
+  describe('eliminar cuenta (Ley 1581)', () => {
+    it('exige la contraseña correcta', async () => {
+      await http()
+        .delete('/api/users/me')
+        .set(auth())
+        .send({ password: 'contrasena-equivocada' })
+        .expect(401);
+
+      // Sigue existiendo.
+      await http().get('/api/users/me').set(auth()).expect(200);
+    });
+
+    it('borra de verdad al usuario y todos sus datos asociados', async () => {
+      const usuario = await prisma.user.findUniqueOrThrow({ where: { email } });
+
+      await http()
+        .delete('/api/users/me')
+        .set(auth())
+        .send({ password: 'contrasena-segura' })
+        .expect(204);
+
+      // No es un borrado lógico: la fila desaparece.
+      expect(await prisma.user.findUnique({ where: { email } })).toBeNull();
+
+      // Y todo lo asociado cae en cascada — el derecho de cancelación no se
+      // cumple dejando las transacciones huérfanas en la base.
+      const [cuentas, categorias, transacciones, tokens] = await Promise.all([
+        prisma.account.count({ where: { userId: usuario.id } }),
+        prisma.category.count({ where: { userId: usuario.id } }),
+        prisma.transaction.count({ where: { userId: usuario.id } }),
+        prisma.shortcutToken.count({ where: { userId: usuario.id } }),
+      ]);
+
+      expect({ cuentas, categorias, transacciones, tokens }).toEqual({
+        cuentas: 0,
+        categorias: 0,
+        transacciones: 0,
+        tokens: 0,
+      });
+    });
+
+    it('el token de sesión ya no sirve', async () => {
+      await http().get('/api/users/me').set(auth()).expect(401);
     });
   });
 });

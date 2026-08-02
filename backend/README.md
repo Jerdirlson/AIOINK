@@ -80,11 +80,17 @@ prisma/
 | `GET` | `/api/health` | Salud de la API y la base de datos (público) |
 | `POST` | `/api/auth/register` | Crea cuenta + categorías por defecto (público) |
 | `POST` | `/api/auth/login` | Devuelve un JWT (público) |
-| `GET` | `/api/auth/me` | Perfil del usuario autenticado |
+| `GET/PATCH` | `/api/users/me` | Ver y editar el perfil |
+| `DELETE` | `/api/users/me` | Elimina la cuenta y todos sus datos (Ley 1581) |
 | `GET/POST/PATCH/DELETE` | `/api/categories` | CRUD de categorías |
 | `GET/POST/PATCH/DELETE` | `/api/accounts` | CRUD de cuentas, con saldo calculado |
 | `GET/POST/PATCH/DELETE` | `/api/transactions` | CRUD de transacciones, con filtros |
 | `POST` | `/api/transactions/transfer` | Transferencia entre cuentas propias |
+| `GET` | `/api/reports/summary` | Ingresos, gastos y saldo del periodo |
+| `GET` | `/api/reports/by-category` | Gasto por categoría, de mayor a menor |
+| `GET` | `/api/reports/monthly` | Serie mensual de ingresos y gastos |
+| `GET/POST/DELETE` | `/api/shortcut-tokens` | Tokens del Atajo de iOS |
+| `POST` | `/api/integrations/apple-pay` | Entrada del Atajo (token propio, no JWT) |
 
 ## Decisiones que conviene conocer
 
@@ -108,6 +114,21 @@ guard en un controlador nuevo no abre un hueco.
 
 **Las categorías de sistema son por usuario**, no globales, para que toda
 consulta filtre por `userId` sin casos especiales.
+
+**Los reportes excluyen las categorías del sistema.** El "Saldo inicial" no es
+un ingreso (es dinero que ya existía) y una transferencia entre cuentas propias
+no es ni gasto ni ingreso. Contarlos inflaría los totales y descuadraría los
+porcentajes del gráfico.
+
+**El JWT se valida contra la base en cada petición.** Un token es válido
+criptográficamente aunque la cuenta se haya eliminado; con vigencia de 7 días
+eso permitiría operar una semana después de un borrado, incompatible con el
+derecho de cancelación. Cuesta una búsqueda por clave primaria.
+
+**El token del Atajo se guarda hasheado** (SHA-256) y solo se muestra en claro
+al crearlo, como una API key. Es independiente del JWT: se revoca sin cerrar la
+sesión del usuario. El endpoint de Apple Pay es idempotente por `externalId`,
+para que un reintento del Atajo no duplique el gasto.
 
 **Serialización de BigInt:** `JSON.stringify` no sabe serializar `BigInt`, así
 que un interceptor global los convierte a `number` al responder, y lanza si el

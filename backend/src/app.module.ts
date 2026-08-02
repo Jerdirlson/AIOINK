@@ -7,8 +7,11 @@ import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { CategoriesModule } from './categories/categories.module';
 import { validateEnv } from './config/env.validation';
 import { HealthController } from './health/health.controller';
+import { IntegrationsModule } from './integrations/integrations.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { ReportsModule } from './reports/reports.module';
 import { TransactionsModule } from './transactions/transactions.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
@@ -19,9 +22,12 @@ import { TransactionsModule } from './transactions/transactions.module';
     }),
     PrismaModule,
     AuthModule,
+    UsersModule,
     CategoriesModule,
     AccountsModule,
     TransactionsModule,
+    ReportsModule,
+    IntegrationsModule,
   ],
   controllers: [HealthController],
   providers: [
