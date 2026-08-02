@@ -13,8 +13,10 @@ backend/prisma/*.db
 backend/prisma/migrations/dev/
 
 # iOS / Xcode
-ios/**/*.xcodeproj/xcuserdata/
-ios/**/*.xcworkspace/xcuserdata/
+# El .xcodeproj se genera con XcodeGen desde project.yml: versionarlo produce
+# diffs ilegibles y conflictos constantes.
+ios/*.xcodeproj/
+ios/*.xcworkspace/
 ios/**/DerivedData/
 ios/**/*.xcuserstate
 ios/**/Pods/
